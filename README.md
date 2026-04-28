@@ -35,5 +35,10 @@ Set environment variables or create a launch script:
 python main.py
 ```
 
+## Citations
+If you use this project or its dependencies, please cite:
+
+- ChipaDevTeam, & Rick, R. (2026). *BinaryOptionsTools v2: High-Performance Binary Options Trading Library* [Computer software]. https://github.com/ChipaDevTeam/BinaryOptionsTools-v2
+
 ## Disclaimer
 This software is for educational purposes only. Use at your own risk.
