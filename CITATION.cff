@@ -1,0 +1,11 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite the following references."
+references:
+  - type: software
+    authors:
+      - name: ChipaDevTeam
+      - family-names: Rick
+        given-names: R.
+    title: "BinaryOptionsTools v2: High-Performance Binary Options Trading Library"
+    year: 2026
+    url: "https://github.com/ChipaDevTeam/BinaryOptionsTools-v2"
