@@ -73,21 +73,29 @@ class FeatureLab:
             log.info("      %s: importance=%.6f", name, importance[idx])
 
         # --- Mask anti-predictive experimental features ---
+        # Use relative (percentile-based) threshold instead of arbitrary absolute 1e-6,
+        # since features have different scales and absolute thresholds are meaningless.
+        exp_importance = importance[num_core:]
+        if len(exp_importance) > 5:
+            threshold = np.percentile(exp_importance, 15)  # bottom 15% → mask
+        else:
+            threshold = 1e-6
+
         masked_count = 0
         unmasked_count = 0
         for i in range(num_core, len(importance)):
-            if importance[i] < 1e-6:
-                # Feature shows zero difference between wins/losses — mask it
+            if importance[i] <= threshold:
+                # Feature has bottom-quartile importance — mask it
                 self.engine.feature_mask[i] = 0.0
                 masked_count += 1
             else:
-                # Feature shows some signal — keep it active
+                # Feature shows meaningful signal — keep it active
                 self.engine.feature_mask[i] = 1.0
                 unmasked_count += 1
 
         active_experimental = int(np.sum(self.engine.feature_mask[num_core:]))
-        log.info("   🧪 Experimental features: %d active, %d masked",
-                 active_experimental, masked_count)
+        log.info("   🧪 Experimental features: %d active, %d masked (threshold=%.6f)",
+                 active_experimental, masked_count, threshold)
 
     def get_report(self) -> str:
         """Short status string."""

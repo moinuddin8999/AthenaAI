@@ -305,9 +305,31 @@ class AITradingBot:
             losses = sum(1 for t in past_trades if t["result"] == "loss")
             self.perf.wins = wins
             self.perf.losses = losses
+
+            # Restore full P&L state
+            profit_rows = self.journal.all_profits()
+            total_profit = 0.0
+            peak = 0.0
+            max_dd = 0.0
+            for result, profit, _ in profit_rows:
+                if profit is not None:
+                    total_profit += profit
+                    if total_profit > peak:
+                        peak = total_profit
+                    dd = peak - total_profit
+                    if dd > max_dd:
+                        max_dd = dd
+            self.perf.total_profit = total_profit
+            self.perf._peak = peak
+            self.perf.max_drawdown = max_dd
+
+            # Restore daily P&L for money manager
+            self.money_mgr.daily_pnl = self.journal.today_pnl()
+
             log.info(
-                "📊 Restored stats: W:%d L:%d WR:%.1f%%",
+                "📊 Restored stats: W:%d L:%d WR:%.1f%%  P&L:$%+.2f  DD:$%.2f  DailyPnL:$%+.2f",
                 wins, losses, (wins / (wins + losses) * 100) if (wins + losses) > 0 else 50,
+                total_profit, max_dd, self.money_mgr.daily_pnl,
             )
 
             # Feed adaptive strategy from journal
@@ -549,8 +571,8 @@ class AITradingBot:
                     if show_diag: log.info("⏸ Volatile regime — skipping"); last_diag = now
                     continue
 
-                # --- prediction ---
-                direction, confidence = self.ensemble.predict(features)
+                # --- prediction (with per-model votes for live accuracy tracking) ---
+                direction, confidence, model_votes = self.ensemble.predict_with_votes(features)
 
                 # --- confidence gate ---
                 if confidence < self.cfg.min_confidence:
@@ -598,9 +620,10 @@ class AITradingBot:
                     log.info("🧠 Adaptive skip: %s (conf=%.1f%%)", ad_reason, confidence * 100)
                     continue
 
-                # --- stake sizing ---
+                # --- stake sizing (recent win rate for responsive Kelly) ---
+                recent_wr = self.journal.recent_win_rate(n=50)
                 stake = self.money_mgr.compute_stake(
-                    confidence, self.perf.win_rate, payout=0.85,
+                    confidence, recent_wr, payout=0.85,
                 )
 
                 # --- AI EXPIRY SELECTION ---
@@ -639,9 +662,10 @@ class AITradingBot:
                 self.journal.save_trade(record)
                 self._last_trade_time = time.time()
 
-                # Store features for later learning
+                # Store features & model votes for later learning
                 record._features = features  # type: ignore[attr-defined]
                 record._direction_int = 1 if direction == Direction.CALL else 0  # type: ignore[attr-defined]
+                record._model_votes = model_votes  # type: ignore[attr-defined]
                 record.features_json = json.dumps(features.tolist())
 
             except Exception as e:
@@ -720,10 +744,15 @@ class AITradingBot:
                         self.perf.summary(), self.expiry_selector.status_line(),
                     )
 
+                    # --- LIVE MODEL ACCURACY TRACKING ---
+                    model_votes = getattr(rec, "_model_votes", None)
+                    dir_int = getattr(rec, "_direction_int", 0)
+                    if model_votes is not None and result_str in ("win", "loss"):
+                        self.ensemble.update_accuracy(model_votes, dir_int)
+
                     # --- ONLINE LEARNING ---
                     features = getattr(rec, "_features", None)
                     if features is not None and result_str in ("win", "loss"):
-                        dir_int = getattr(rec, "_direction_int", 0)
                         if result_str == "win":
                             label = dir_int          # correct prediction
                         else:

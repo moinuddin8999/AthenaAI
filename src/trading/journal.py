@@ -89,3 +89,24 @@ class TradeJournal:
     def total_trades(self) -> int:
         cur = self.conn.execute("SELECT COUNT(*) FROM trades")
         return cur.fetchone()[0]
+
+    def all_profits(self) -> list[tuple[str, float, float]]:
+        """Load (result, profit, entry_time) for all completed trades."""
+        cur = self.conn.execute(
+            "SELECT result, profit, entry_time FROM trades "
+            "WHERE result IS NOT NULL ORDER BY entry_time ASC"
+        )
+        return cur.fetchall()
+
+    def today_pnl(self) -> float:
+        """Sum of profits for trades today (UTC)."""
+        import time
+        from datetime import datetime, timezone
+        now = datetime.now(timezone.utc)
+        today_start = datetime(now.year, now.month, now.day, tzinfo=timezone.utc).timestamp()
+        cur = self.conn.execute(
+            "SELECT COALESCE(SUM(profit), 0.0) FROM trades "
+            "WHERE entry_time >= ? AND result IS NOT NULL",
+            (today_start,),
+        )
+        return cur.fetchone()[0]

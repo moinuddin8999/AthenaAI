@@ -200,26 +200,42 @@ class EnsemblePredictor:
             log.warning("Failed to load brain: %s", e)
             return False
 
+    # -- per-model vote tracking for live accuracy --
+    def predict_with_votes(self, features: np.ndarray) -> tuple[Direction, float, dict[str, float]]:
+        """Same as predict but also returns per-model probability of CALL."""
+        direction, confidence, per_model = self._predict_impl(features, return_votes=True)
+        return direction, confidence, per_model
+
     # -- prediction --
     def predict(self, features: np.ndarray) -> tuple[Direction, float]:
+        direction, confidence, _ = self._predict_impl(features, return_votes=False)
+        return direction, confidence
+
+    def _predict_impl(self, features: np.ndarray, return_votes: bool = False) -> tuple:
         if not SKLEARN_OK or not self._fitted:
-            return self._fallback_predict(features)
+            d, c = self._fallback_predict(features)
+            return (d, c, {}) if return_votes else (d, c)
 
         try:
             if not hasattr(self.scaler, 'n_features_in_'):
-                return self._fallback_predict(features)
+                d, c = self._fallback_predict(features)
+                return (d, c, {}) if return_votes else (d, c)
             if self.scaler.n_features_in_ != len(features):
-                return self._fallback_predict(features)
+                d, c = self._fallback_predict(features)
+                return (d, c, {}) if return_votes else (d, c)
         except Exception:
-            return self._fallback_predict(features)
+            d, c = self._fallback_predict(features)
+            return (d, c, {}) if return_votes else (d, c)
 
         try:
             X = self.scaler.transform(features.reshape(1, -1))
         except Exception:
-            return self._fallback_predict(features)
+            d, c = self._fallback_predict(features)
+            return (d, c, {}) if return_votes else (d, c)
 
         weighted_call = 0.0
         total_weight = 0.0
+        per_model: dict[str, float] = {} if return_votes else None
 
         # Online models vote
         for m in self.models:
@@ -237,6 +253,8 @@ class EnsemblePredictor:
 
             weighted_call += w * p_call
             total_weight += w
+            if return_votes:
+                per_model[m["name"]] = p_call
 
         # Batch models vote (2× weight — they're stronger)
         if self._batch_fitted:
@@ -252,13 +270,32 @@ class EnsemblePredictor:
                     p_call = 0.5
                 weighted_call += w * p_call
                 total_weight += w
+                if return_votes:
+                    per_model[m["name"]] = p_call
 
         p = weighted_call / (total_weight + 1e-10)
 
         if p >= 0.5:
-            return Direction.CALL, p
+            result = (Direction.CALL, p)
         else:
-            return Direction.PUT, 1.0 - p
+            result = (Direction.PUT, 1.0 - p)
+
+        if return_votes:
+            return (result[0], result[1], per_model)
+        return result
+
+    def update_accuracy(self, model_votes: dict[str, float], actual_direction_int: int):
+        """Update each model's accuracy_ema based on actual trade outcome.
+        Called after a trade resolves so ensemble weights reflect live trading
+        performance rather than training-set accuracy."""
+        for m in self.models + self._batch_models:
+            p_call = model_votes.get(m["name"])
+            if p_call is None:
+                continue
+            predicted_call = p_call >= 0.5
+            correct = 1.0 if (predicted_call and actual_direction_int == 1) or \
+                            (not predicted_call and actual_direction_int == 0) else 0.0
+            m["accuracy_ema"] = 0.9 * m["accuracy_ema"] + 0.1 * correct
 
     @staticmethod
     def _fallback_predict(features: np.ndarray) -> tuple[Direction, float]:
