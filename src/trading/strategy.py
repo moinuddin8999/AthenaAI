@@ -132,23 +132,42 @@ class AdaptiveStrategy:
                 self.preferred_direction = "call"
                 log.info("   🔄 Favoring CALL trades (PUT WR too low: %.1f%%)", put_wr * 100)
 
-        # --- 4. Confidence adjustment ---
-        # If low-confidence trades are losing, raise the bar
+        # --- 4. Full confidence band analysis ---
+        # Check all bands (low, med, high) for graduated threshold adjustment
         low_stats = self.by_conf_band.get("low", self._bucket())
         med_stats = self.by_conf_band.get("med", self._bucket())
         high_stats = self.by_conf_band.get("high", self._bucket())
 
         low_total = low_stats["wins"] + low_stats["losses"]
-        if low_total >= self.min_samples and self._wr(low_stats) < 0.50:
-            self.confidence_adj = 0.05  # raise min confidence by 5%
-            log.info("   📈 Raising confidence threshold +5%% (low-conf WR: %.1f%%)",
-                     self._wr(low_stats) * 100)
-        elif low_total >= self.min_samples and self._wr(low_stats) > 0.55:
-            self.confidence_adj = -0.03  # lower it slightly — more opportunities
-            log.info("   📉 Lowering confidence threshold -3%% (low-conf WR: %.1f%%)",
-                     self._wr(low_stats) * 100)
-        else:
-            self.confidence_adj = 0.0
+        med_total = med_stats["wins"] + med_stats["losses"]
+        high_total = high_stats["wins"] + high_stats["losses"]
+
+        self.confidence_adj = 0.0
+
+        # Analyse each band with sufficient data
+        if low_total >= self.min_samples:
+            low_wr = self._wr(low_stats)
+            if low_wr < 0.48:
+                self.confidence_adj += 0.04
+                log.info("   📈 Low-conf WR %.1f%% → +4%% threshold", low_wr * 100)
+            elif low_wr > 0.58 and med_total >= self.min_samples and self._wr(med_stats) > 0.50:
+                self.confidence_adj -= 0.02
+                log.info("   📉 Low-conf WR %.1f%% → -2%% threshold", low_wr * 100)
+
+        if med_total >= self.min_samples:
+            med_wr = self._wr(med_stats)
+            if med_wr < 0.45:
+                self.confidence_adj += 0.03
+                log.info("   📈 Med-conf WR %.1f%% → +3%% threshold", med_wr * 100)
+
+        if high_total >= self.min_samples:
+            high_wr = self._wr(high_stats)
+            if high_wr < 0.40:
+                self.confidence_adj += 0.05
+                log.info("   📈 High-conf WR %.1f%% → +5%% threshold (models mis-calibrated!)",
+                         high_wr * 100)
+
+        self.confidence_adj = max(-0.05, min(self.confidence_adj, 0.15))
 
         # --- 5. Recent momentum — adaptive cooldown ---
         if len(self._recent) >= 10:
