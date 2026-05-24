@@ -236,7 +236,7 @@ class AITradingBot:
             log.info("═" * 50)
             log.info("🧪 WALK-FORWARD TEST (30%%): %d trades", total)
             log.info("   Win: %d | Loss: %d | HONEST WR: %.1f%%", wins, losses, wr)
-            breakeven = 1.0 / (1.0 + 0.92) * 100  # 92% payout
+            breakeven = 1.0 / (1.0 + 0.85) * 100  # 85% payout
             if wr > breakeven:
                 log.info("   ✅ EDGE: +%.1f%% above breakeven (%.1f%%)", wr - breakeven, breakeven)
             else:

@@ -54,17 +54,20 @@ class TradeJournal:
     def load_completed_trades(self) -> list[dict]:
         """Load all completed trades with features for retraining."""
         cur = self.conn.execute(
-            "SELECT direction, result, features FROM trades "
+            "SELECT direction, result, features, regime, confidence, entry_time FROM trades "
             "WHERE result IN ('win', 'loss') AND features IS NOT NULL "
             "ORDER BY entry_time ASC"
         )
         rows = cur.fetchall()
         trades = []
-        for direction, result, features_json in rows:
+        for direction, result, features_json, regime, confidence, entry_time in rows:
             trades.append({
                 "direction": direction,
                 "result": result,
                 "features_json": features_json,
+                "regime": regime or "ranging",
+                "confidence": confidence or 0.6,
+                "entry_time": entry_time or 0,
             })
         return trades
 

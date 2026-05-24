@@ -37,7 +37,7 @@ class BotConfig:
     dataset_path: str = ""                  # path to CSV for pre-training (optional)
 
     # --- risk / cooldown ---
-    max_consec_losses: int = 3              # pause after 5 consecutive losses
+    max_consec_losses: int = 3              # pause after 3 consecutive losses
     cooldown_seconds: int = 300             # 5 min cooldown
     regime_window: int = 30                 # candles for regime detection
 
