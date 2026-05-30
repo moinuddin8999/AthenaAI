@@ -50,14 +50,14 @@ class FeatureLab:
 
         # Importance = |win_avg - loss_avg| / (std + epsilon)
         # Features that differ most between wins and losses are most informative
-        combined_avg = (self._win_sums + self._loss_sums) / (self._win_count + self._loss_count)
+        win_std = np.sqrt(np.maximum(0, self._win_sums / self._win_count - win_avg ** 2))
+        loss_std = np.sqrt(np.maximum(0, self._loss_sums / self._loss_count - loss_avg ** 2))
+        pooled_std = np.sqrt((win_std ** 2 + loss_std ** 2) / 2)
         diff = np.abs(win_avg - loss_avg)
+        importance = diff / (pooled_std + 1e-10)
 
         # Only evaluate experimental features for masking
         num_core = FeatureEngine.NUM_CORE
-
-        # --- Report top 5 most predictive features ---
-        importance = diff.copy()
         top_indices = np.argsort(importance)[::-1][:5]
         log.info("   🏆 Top 5 most predictive features:")
         for idx in top_indices:

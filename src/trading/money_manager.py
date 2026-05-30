@@ -22,18 +22,18 @@ class MoneyManager:
         return self.daily_pnl > -self.cfg.max_daily_loss
 
     def compute_stake(self, confidence: float, win_rate: float, payout: float = 0.85) -> float:
-        """Kelly criterion capped by config limits."""
+        """Kelly criterion capped by config limits, confidence-weighted."""
         if payout <= 0:
             return self.cfg.base_stake
-        # Kelly: f* = (p*b - q) / b  where b=payout, p=win_rate, q=1-p
-        edge = win_rate * payout - (1 - win_rate)
+        # Blend historical win_rate with model confidence for the probability estimate
+        prob = 0.7 * confidence + 0.3 * win_rate
+        # Kelly: f* = (p*b - q) / b  where b=payout, p=prob, q=1-p
+        edge = prob * payout - (1 - prob)
         if edge <= 0:
             return self.cfg.base_stake
         kelly = edge / payout
         fraction = kelly * self.cfg.kelly_fraction
         stake = self.cfg.base_stake + fraction * (self.cfg.max_stake - self.cfg.base_stake)
-        # Scale by confidence
-        stake *= (confidence - 0.5) * 2  # maps [0.5, 1.0] → [0, 1]
         stake = max(self.cfg.base_stake, min(stake, self.cfg.max_stake))
         return round(stake, 2)
 
